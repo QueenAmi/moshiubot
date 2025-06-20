@@ -58,7 +58,7 @@ log_pic = getenv("log_pic", "https://files.catbox.moe/i3hey9.jpg")
 def_bahasa = getenv("def_bahasa", "toxic")
 owner_id = int(getenv("owner_id", "2136402531"))
 
-the_cegers = list(k
+the_cegers = list(
     map(
         int,
         getenv(

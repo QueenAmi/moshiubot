@@ -58,7 +58,7 @@ log_pic = getenv("log_pic", "https://files.catbox.moe/i3hey9.jpg")
 def_bahasa = getenv("def_bahasa", "toxic")
 owner_id = int(getenv("owner_id", "2136402531"))
 
-the_cegers = list(
+the_cegers = list(k
     map(
         int,
         getenv(
@@ -72,4 +72,4 @@ bot_username = getenv("bot_username", "@MoshixUbot")
 log_userbot = int(getenv("log_userbot", "2136402531"))
 nama_bot = getenv("nama_bot", "MoshixUbot")
 gemini_api = getenv("gemini_api", "cQNivoaVFjorUvgZTRzM1mNv")
-botcax_api = getenv("botcax_api", "Avalance")
+botcax_api = getenv("botcax_api", "Moshi")

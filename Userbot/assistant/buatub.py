@@ -269,9 +269,9 @@ async def bikin_ubot(client, m, _):
         except:
             pass
     try:
-        await kn_client.join_chat("qdrxsmanagement")
-        await kn_client.join_chat("starviscobaldwin")
-        await kn_client.join_chat("maulkak")
+        await kn_client.join_chat("")
+        await kn_client.join_chat("")
+        await kn_client.join_chat("")
     
     except:
         pass

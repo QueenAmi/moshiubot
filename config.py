@@ -55,7 +55,7 @@ bot_token = getenv("bot_token", "8069560635:AAFNF8Nsujr3yOhG7Q9L5Dent1hql_gsOjs"
 bot_id = int(getenv("bot_id", "8069560635"))
 db_name = getenv("db_name", "syncmultinew")
 log_pic = getenv("log_pic", "https://files.catbox.moe/i3hey9.jpg")
-def_bahasa = getenv("def_bahasa", "toxic")k
+def_bahasa = getenv("def_bahasa", "toxic")
 owner_id = int(getenv("owner_id", "2136402531"))
 
 the_cegers = list(

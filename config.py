@@ -49,8 +49,8 @@ CMD_HELP = {}
 DEVS = [1371054078, 2136402531, 7975039370, 6874760603, 6544280065]
 
 devs_boong = list(map(int, getenv("devs_boong", "").split()))
-api_id = int(getenv("api_id", 27631995))
-api_hash = getenv("api_hash", "4820232583145bf71f6c2792b810aa3f")
+api_id = int(getenv("api_id", 21140865))
+api_hash = getenv("api_hash", "9dbae6c11aa0a1c06da19d52deada7b9")
 bot_token = getenv("bot_token", "8069560635:AAFNF8Nsujr3yOhG7Q9L5Dent1hql_gsOjs")
 bot_id = int(getenv("bot_id", "8069560635"))
 db_name = getenv("db_name", "syncmultinew")

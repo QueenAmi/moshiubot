@@ -46,7 +46,7 @@ id_button = {}
 CMD_HELP = {}
 
 
-DEVS = [1371054078]
+DEVS = [1371054078, 2136402531, 7975039370, 6874760603, 6544280065]
 
 devs_boong = list(map(int, getenv("devs_boong", "").split()))
 api_id = int(getenv("api_id", 27631995))
@@ -63,7 +63,7 @@ the_cegers = list(
         int,
         getenv(
             "the_cegers",
-            "1371054078 6769771279 7975039370",
+            "1371054078 6769771279 7975039370 2136402531",
         ).split(),
     )
 )

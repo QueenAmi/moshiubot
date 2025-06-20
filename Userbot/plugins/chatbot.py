@@ -2,7 +2,7 @@ import random
 import traceback
 import asyncio
 
-from pyrogram import enums, errors, filters
+from pyrogram import enums, errors, filters, handlers
 from config import bot_id, botcax_api, the_cegers
 from Userbot.helper.database import dB, state
 from Userbot.helper.tools import ky, fetch
@@ -62,7 +62,14 @@ async def chatbot_cmd(client, message, _):
     cmd = message.command
     if len(cmd) < 2:
         return await message.reply(
-            f"<b>Usage: <code>{cmd[0]} on|off|status|role</code></b>"
+            f"<b>Usage: <code>{cmd[0]} on|off|status|role|test|debug</code></b>\n\n"
+            f"<b>Commands:</b>\n"
+            f"• <code>on</code> - Aktifkan chatbot\n"
+            f"• <code>off</code> - Matikan chatbot\n"
+            f"• <code>status</code> - Lihat status\n"
+            f"• <code>role</code> - Set/lihat role\n"
+            f"• <code>test [text]</code> - Test response\n"
+            f"• <code>debug</code> - Debug info"
         )
 
     action = cmd[1].lower()
@@ -133,41 +140,38 @@ async def chatbot_cmd(client, message, _):
         dB.set_var(client.me.id, "ROLE_CHATBOT", role)
         return await message.reply(f"<b>✅ Role chatbot berhasil diatur:</b>\n<code>{role[:200]}...</code>" if len(role) > 200 else f"<b>✅ Role chatbot berhasil diatur:</b>\n<code>{role}</code>")
 
-    else:
-        return await message.reply(f"<b>❌ Aksi tidak valid: <code>{action}</code></b>\n<b>Gunakan: on, off, status, atau role</b>")
+    elif action == "test":
+        # Test chatbot response
+        test_text = " ".join(cmd[2:]) if len(cmd) > 2 else "hello"
+        result = await test_chatbot_manual(client, message.chat.id, test_text)
+        if result:
+            return await message.reply(f"<b>🧪 Test Response:</b>\n{result}")
+        else:
+            return await message.reply("<b>❌ Test failed. Check API connection.</b>")
 
-# Event handler untuk menangani pesan masuk
-async def setup_chatbot_handlers(client):
-    """Setup message handlers untuk chatbot"""
-    
-    @client.on_message(filters.group & ~filters.bot & ~filters.via_bot)
-    async def handle_group_message(client, message):
-        """Handle incoming group messages"""
-        try:
-            # Skip jika tidak ada teks
-            if not (message.text or message.caption):
-                return
-                
-            # Skip jika dari userbot atau user tertentu
-            if (message.from_user.id in userbot_ids or 
-                message.from_user.id in the_cegers or
-                message.from_user.id == client.me.id):
-                return
-            
-            # Skip jika chatbot tidak aktif di grup ini
-            active_chats = dB.get_list_from_var(client.me.id, "CHATBOT") or []
-            if message.chat.id not in active_chats:
-                return
-            
-            # Skip jika pesan adalah command
-            text = message.text or message.caption
-            if text.startswith(('.', '/', '!', '-')):
-                return
-                
-            await chatbot_trigger(client, message)
-            
-        except Exception as e:
-            print(f"Error in message handler: {e}")
+    elif action == "debug":
+        # Debug info
+        active_chats = dB.get_list_from_var(client.me.id, "CHATBOT") or []
+        current_role = dB.get_var(client.me.id, "ROLE_CHATBOT")
+        
+        debug_info = f"""<b>🔍 Debug Info:</b>
+        
+<b>Userbot ID:</b> <code>{client.me.id}</code>
+<b>Active Chats:</b> {len(active_chats)}
+<b>Current Chat ID:</b> <code>{message.chat.id}</code>
+<b>Chat Active:</b> {'✅' if message.chat.id in active_chats else '❌'}
+<b>Role Set:</b> {'✅' if current_role else '❌'}
+<b>API Key:</b> {'✅' if botcax_api else '❌'}
+
+<b>Userbot IDs in memory:</b> {len(userbot_ids)}
+"""
+        return await message.reply(debug_info)
+
+    else:
+        return await message.reply(f"<b>❌ Aksi tidak valid: <code>{action}</code></b>\n<b>Gunakan: on, off, status, role, test, atau debug</b>")
+
+# Global variable untuk menyimpan handler
+message_handlers = {}
 
 async def chatbot_trigger(client, message):
     """Process message dengan chatbot"""
@@ -212,27 +216,159 @@ async def chatbot_trigger(client, message):
     except Exception as e:
         print(f"Error in chatbot_trigger: {e}")
 
-async def ChatbotTask():
-    """Initialize chatbot untuk semua userbot"""
+async def handle_group_message(client, message):
+    """Handle incoming group messages"""
+    try:
+        # Skip jika tidak ada teks
+        if not (message.text or message.caption):
+            return
+            
+        # Skip jika dari userbot atau user tertentu
+        if (message.from_user.id in userbot_ids or 
+            message.from_user.id in the_cegers or
+            message.from_user.id == client.me.id):
+            return
+        
+        # Skip jika chatbot tidak aktif di grup ini
+        active_chats = dB.get_list_from_var(client.me.id, "CHATBOT") or []
+        if message.chat.id not in active_chats:
+            return
+        
+        # Skip jika pesan adalah command
+        text = message.text or message.caption
+        if text.startswith(('.', '/', '!', '-')):
+            return
+            
+        print(f"🤖 Processing message from {message.from_user.first_name} in {message.chat.title}")
+        await chatbot_trigger(client, message)
+        
+    except Exception as e:
+        print(f"❌ Error in message handler: {e}")
+        print(traceback.format_exc())
+
+def setup_chatbot_handlers():
+    """Setup message handlers untuk semua userbot"""
     for userbot in nlx._ubot:
         try:
             # Add userbot ID ke set
             userbot_ids.add(userbot.me.id)
             
-            # Setup message handlers
-            await setup_chatbot_handlers(userbot)
-            
-            print(f"✅ Chatbot initialized for {userbot.me.first_name}")
+            # Register handler jika belum ada
+            if userbot.me.id not in message_handlers:
+                handler = userbot.add_handler(
+                    handlers.MessageHandler(
+                        handle_group_message,
+                        filters.group & ~filters.bot & ~filters.via_bot
+                    )
+                )
+                message_handlers[userbot.me.id] = handler
+                print(f"✅ Handler registered for {userbot.me.first_name}")
             
         except Exception as e:
-            print(f"❌ Error starting Chatbot for {userbot.me.first_name}: {e}")
+            print(f"❌ Error setting up handler for {userbot.me.first_name}: {e}")
             print(traceback.format_exc())
 
-# Fungsi untuk restart chatbot jika diperlukan
-async def restart_chatbot():
-    """Restart chatbot handlers"""
+# Alternative: Polling method (lebih simple dan reliable)
+async def chatbot_polling_loop(client):
+    """Polling loop untuk check pesan baru"""
+    last_message_ids = {}
+    
+    while True:
+        try:
+            active_chats = dB.get_list_from_var(client.me.id, "CHATBOT") or []
+            
+            for chat_id in active_chats:
+                try:
+                    # Get latest message
+                    async for message in client.get_chat_history(chat_id, limit=1):
+                        # Skip jika pesan sudah diproses
+                        if chat_id in last_message_ids and message.id <= last_message_ids[chat_id]:
+                            break
+                            
+                        # Skip jika tidak ada teks
+                        if not (message.text or message.caption):
+                            last_message_ids[chat_id] = message.id
+                            break
+                            
+                        # Skip jika dari userbot atau user tertentu
+                        if (message.from_user.id in userbot_ids or 
+                            message.from_user.id in the_cegers or
+                            message.from_user.id == client.me.id):
+                            last_message_ids[chat_id] = message.id
+                            break
+                        
+                        # Skip jika pesan adalah command
+                        text = message.text or message.caption
+                        if text.startswith(('.', '/', '!', '-')):
+                            last_message_ids[chat_id] = message.id
+                            break
+                        
+                        print(f"🤖 Processing message from {message.from_user.first_name} in chat {chat_id}")
+                        await chatbot_trigger(client, message)
+                        last_message_ids[chat_id] = message.id
+                        break
+                        
+                except Exception as e:
+                    print(f"Error processing chat {chat_id}: {e}")
+                    
+                await asyncio.sleep(0.5)  # Small delay between chats
+                
+        except Exception as e:
+            print(f"Error in polling loop for {client.me.first_name}: {e}")
+            
+        await asyncio.sleep(2)  # Main loop delay
+
+async def ChatbotTask():
+    """Initialize chatbot untuk semua userbot"""
     try:
-        await ChatbotTask()
-        print("🔄 Chatbot handlers restarted successfully")
+        # Method 1: Try event handlers first
+        setup_chatbot_handlers()
+        
+        # Method 2: Fallback to polling (more reliable)
+        for userbot in nlx._ubot:
+            try:
+                userbot_ids.add(userbot.me.id)
+                asyncio.create_task(chatbot_polling_loop(userbot))
+                print(f"✅ Polling started for {userbot.me.first_name}")
+            except Exception as e:
+                print(f"❌ Error starting polling for {userbot.me.first_name}: {e}")
+        
+        print("✅ Chatbot Task initialized successfully")
     except Exception as e:
-        print(f"❌ Error restarting chatbot: {e}")
+        print(f"❌ Error in ChatbotTask: {e}")
+        print(traceback.format_exc())
+
+# Fungsi manual untuk test chatbot
+async def test_chatbot_manual(client, chat_id, text):
+    """Fungsi untuk test chatbot secara manual"""
+    try:
+        # Buat fake message object untuk testing
+        class FakeUser:
+            def __init__(self):
+                self.id = 12345
+                self.first_name = "Test User"
+        
+        class FakeChat:
+            def __init__(self, chat_id):
+                self.id = chat_id
+                self.title = "Test Chat"
+        
+        class FakeMessage:
+            def __init__(self, text, chat_id):
+                self.text = text
+                self.caption = None
+                self.from_user = FakeUser()
+                self.chat = FakeChat(chat_id)
+                self.id = 1
+            
+            async def reply(self, text):
+                print(f"Bot would reply: {text}")
+        
+        fake_msg = FakeMessage(text, chat_id)
+        result = await gen_text(client, fake_msg)
+        print(f"Generated response: {result}")
+        return result
+        
+    except Exception as e:
+        print(f"Error in test: {e}")
+        return None

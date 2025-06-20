@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 black = int(b64decode("MTA1NDI5NTY2NA=="))
 
 ERROR = "Maintained ? Yes Oh No Oh Yes Ngentot\n\nBot Ini Haram Buat Lo Bangsat!!\n\n@ CREDIT : NAN-DEV"
-DIBAN = "LAH LU DIBAN BEGO DI @TELESUPPORT_ID"
+DIBAN = "LAH LU DIBAN BEGO DI @UserbotTele"
 
 
 def get_tolol():
@@ -63,11 +63,11 @@ the_cegers = list(
         int,
         getenv(
             "the_cegers",
-            "1371054078",
+            "1371054078 6769771279 7975039370",
         ).split(),
     )
 )
-dump = int(getenv("dump", "-1002405392450"))
+dump = int(getenv("dump", "-1002639054633"))
 bot_username = getenv("bot_username", "@MoshixUbot")
 log_userbot = int(getenv("log_userbot", "2136402531"))
 nama_bot = getenv("nama_bot", "MoshixUbot")

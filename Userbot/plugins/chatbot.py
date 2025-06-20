@@ -2,7 +2,7 @@ import random
 import traceback
 import asyncio
 
-from pyrogram import enums, errors, filters, handlers
+from pyrogram import enums, errors, filters
 from config import bot_id, botcax_api, the_cegers
 from Userbot.helper.database import dB, state
 from Userbot.helper.tools import ky, fetch
@@ -114,16 +114,26 @@ async def chatbot_cmd(client, message, _):
         if not chats:
             return await message.reply("<b>📝 Tidak ada grup yang mengaktifkan chatbot.</b>")
         
-        msg_lines = ["<b>📋 Status Chatbot:</b>\n"]
+        # Get status lengkap
+        status_info = []
+        status_info.append("<b>📋 Status Chatbot:</b>\n")
+        status_info.append(f"<b>🤖 Userbot:</b> {client.me.first_name}")
+        status_info.append(f"<b>📊 Total Chat Aktif:</b> {len(chats)}")
+        status_info.append(f"<b>🔄 Monitoring:</b> {'✅ Active' if client.me.id in chatbot_active else '❌ Inactive'}")
+        status_info.append("")
+        status_info.append("<b>📝 Daftar Chat Aktif:</b>")
+        
         for i, cid in enumerate(chats, 1):
             try:
                 chat_info = await client.get_chat(cid)
                 name = chat_info.title or "Unknown"
-                msg_lines.append(f"<b>{i}. {name}</b> | <code>{cid}</code>")
+                status_info.append(f"<b>{i}. {name}</b>")
+                status_info.append(f"   └ ID: <code>{cid}</code>")
             except:
-                msg_lines.append(f"<b>{i}. Unknown Chat</b> | <code>{cid}</code>")
+                status_info.append(f"<b>{i}. Unknown Chat</b>")
+                status_info.append(f"   └ ID: <code>{cid}</code> (⚠️ Error)")
         
-        return await message.reply("\n".join(msg_lines))
+        return await message.reply("\n".join(status_info))
 
     elif action == "role":
         if not message.reply_to_message:
@@ -150,21 +160,44 @@ async def chatbot_cmd(client, message, _):
             return await message.reply("<b>❌ Test failed. Check API connection.</b>")
 
     elif action == "debug":
-        # Debug info
+        # Debug info lengkap
         active_chats = dB.get_list_from_var(client.me.id, "CHATBOT") or []
         current_role = dB.get_var(client.me.id, "ROLE_CHATBOT")
         
-        debug_info = f"""<b>🔍 Debug Info:</b>
+        # Check monitoring status
+        monitoring_status = "✅ Active" if client.me.id in chatbot_active else "❌ Inactive"
         
-<b>Userbot ID:</b> <code>{client.me.id}</code>
-<b>Active Chats:</b> {len(active_chats)}
-<b>Current Chat ID:</b> <code>{message.chat.id}</code>
-<b>Chat Active:</b> {'✅' if message.chat.id in active_chats else '❌'}
-<b>Role Set:</b> {'✅' if current_role else '❌'}
-<b>API Key:</b> {'✅' if botcax_api else '❌'}
+        # Check API key
+        api_status = "✅ Valid" if botcax_api else "❌ Missing"
+        
+        # Get total userbots
+        total_ubot = len(nlx._ubot) if hasattr(nlx, '_ubot') else 0
+        
+        debug_info = f"""<b>🔍 Debug Info Chatbot:</b>
 
-<b>Userbot IDs in memory:</b> {len(userbot_ids)}
-"""
+<b>📊 Status Umum:</b>
+├ <b>Userbot ID:</b> <code>{client.me.id}</code>
+├ <b>Userbot Name:</b> {client.me.first_name}
+├ <b>Monitoring:</b> {monitoring_status}
+├ <b>Total Userbot:</b> {total_ubot}
+└ <b>API Key:</b> {api_status}
+
+<b>⚙️ Konfigurasi:</b>
+├ <b>Chat Aktif:</b> {len(active_chats)} chat
+├ <b>Current Chat ID:</b> <code>{message.chat.id}</code>
+├ <b>Chat Ini Aktif:</b> {'✅' if message.chat.id in active_chats else '❌'}
+└ <b>Role Custom:</b> {'✅' if current_role else '❌ (Default)'}
+
+<b>🧠 Memory:</b>
+├ <b>Userbot IDs:</b> {len(userbot_ids)} tracked
+├ <b>Active Instances:</b> {len(chatbot_active)}
+└ <b>State Keys:</b> {len(state._state.get(str(client.me.id), {}))} items
+
+<b>🔧 Commands:</b>
+├ <code>.chatbot test hello</code> - Test response
+├ <code>.chatbot on</code> - Aktifkan di chat ini
+└ <code>.chatbot status</code> - Lihat status lengkap"""
+
         return await message.reply(debug_info)
 
     else:
@@ -217,7 +250,7 @@ async def chatbot_trigger(client, message):
         print(f"Error in chatbot_trigger: {e}")
 
 async def handle_group_message(client, message):
-    """Handle incoming group messages"""
+    """Handle incoming group messages for chatbot"""
     try:
         # Skip jika tidak ada teks
         if not (message.text or message.caption):
@@ -236,7 +269,7 @@ async def handle_group_message(client, message):
         
         # Skip jika pesan adalah command
         text = message.text or message.caption
-        if text.startswith(('.', '/', '!', '-')):
+        if text.startswith(('.', '/', '!', '-', '+')):
             return
             
         print(f"🤖 Processing message from {message.from_user.first_name} in {message.chat.title}")
@@ -246,97 +279,147 @@ async def handle_group_message(client, message):
         print(f"❌ Error in message handler: {e}")
         print(traceback.format_exc())
 
-def setup_chatbot_handlers():
-    """Setup message handlers untuk semua userbot"""
-    for userbot in nlx._ubot:
-        try:
-            # Add userbot ID ke set
-            userbot_ids.add(userbot.me.id)
-            
-            # Register handler jika belum ada
-            if userbot.me.id not in message_handlers:
-                handler = userbot.add_handler(
-                    handlers.MessageHandler(
-                        handle_group_message,
-                        filters.group & ~filters.bot & ~filters.via_bot
-                    )
-                )
-                message_handlers[userbot.me.id] = handler
-                print(f"✅ Handler registered for {userbot.me.first_name}")
-            
-        except Exception as e:
-            print(f"❌ Error setting up handler for {userbot.me.first_name}: {e}")
-            print(traceback.format_exc())
-
-# Alternative: Polling method (lebih simple dan reliable)
-async def chatbot_polling_loop(client):
-    """Polling loop untuk check pesan baru"""
-    last_message_ids = {}
+# Monitoring loop untuk chatbot (lebih reliable)
+async def chatbot_monitoring_loop(client):
+    """Loop monitoring untuk memproses pesan dengan chatbot"""
+    processed_messages = {}
     
     while True:
         try:
             active_chats = dB.get_list_from_var(client.me.id, "CHATBOT") or []
             
+            if not active_chats:
+                await asyncio.sleep(5)
+                continue
+                
             for chat_id in active_chats:
                 try:
-                    # Get latest message
-                    async for message in client.get_chat_history(chat_id, limit=1):
-                        # Skip jika pesan sudah diproses
-                        if chat_id in last_message_ids and message.id <= last_message_ids[chat_id]:
-                            break
+                    # Get latest messages (last 3)
+                    messages = []
+                    async for msg in client.get_chat_history(chat_id, limit=3):
+                        messages.append(msg)
+                    
+                    for message in reversed(messages):  # Process dari yang lama ke baru
+                        # Create unique message identifier
+                        msg_key = f"{chat_id}_{message.id}"
+                        
+                        # Skip jika sudah diproses
+                        if msg_key in processed_messages:
+                            continue
                             
+                        # Skip jika pesan terlalu lama (lebih dari 5 menit)
+                        import time
+                        if message.date and (time.time() - message.date.timestamp()) > 300:
+                            processed_messages[msg_key] = True
+                            continue
+                        
                         # Skip jika tidak ada teks
                         if not (message.text or message.caption):
-                            last_message_ids[chat_id] = message.id
-                            break
+                            processed_messages[msg_key] = True
+                            continue
                             
                         # Skip jika dari userbot atau user tertentu
                         if (message.from_user.id in userbot_ids or 
                             message.from_user.id in the_cegers or
                             message.from_user.id == client.me.id):
-                            last_message_ids[chat_id] = message.id
-                            break
+                            processed_messages[msg_key] = True
+                            continue
                         
                         # Skip jika pesan adalah command
                         text = message.text or message.caption
-                        if text.startswith(('.', '/', '!', '-')):
-                            last_message_ids[chat_id] = message.id
-                            break
+                        if text.startswith(('.', '/', '!', '-', '+')):
+                            processed_messages[msg_key] = True
+                            continue
                         
-                        print(f"🤖 Processing message from {message.from_user.first_name} in chat {chat_id}")
+                        print(f"🤖 Processing message ID {message.id} from {message.from_user.first_name} in chat {chat_id}")
+                        
+                        # Process dengan chatbot
                         await chatbot_trigger(client, message)
-                        last_message_ids[chat_id] = message.id
-                        break
+                        
+                        # Mark sebagai sudah diproses
+                        processed_messages[msg_key] = True
+                        
+                        # Delay untuk menghindari spam
+                        await asyncio.sleep(2)
+                        break  # Process satu pesan per chat per loop
                         
                 except Exception as e:
                     print(f"Error processing chat {chat_id}: {e}")
                     
-                await asyncio.sleep(0.5)  # Small delay between chats
+                await asyncio.sleep(1)  # Delay antar chat
+            
+            # Cleanup old processed messages (keep only last 1000)
+            if len(processed_messages) > 1000:
+                # Keep only recent entries
+                recent_keys = list(processed_messages.keys())[-500:]
+                processed_messages = {k: v for k, v in processed_messages.items() if k in recent_keys}
                 
         except Exception as e:
-            print(f"Error in polling loop for {client.me.first_name}: {e}")
+            print(f"❌ Error in monitoring loop for {client.me.first_name}: {e}")
+            print(traceback.format_exc())
             
-        await asyncio.sleep(2)  # Main loop delay
+        await asyncio.sleep(3)  # Main loop delay
 
 async def ChatbotTask():
     """Initialize chatbot untuk semua userbot"""
     try:
-        # Method 1: Try event handlers first
-        setup_chatbot_handlers()
+        print("🚀 Starting Chatbot Task...")
         
-        # Method 2: Fallback to polling (more reliable)
         for userbot in nlx._ubot:
             try:
+                # Add userbot ID ke set
                 userbot_ids.add(userbot.me.id)
-                asyncio.create_task(chatbot_polling_loop(userbot))
-                print(f"✅ Polling started for {userbot.me.first_name}")
+                
+                # Start monitoring loop untuk setiap userbot
+                asyncio.create_task(chatbot_monitoring_loop(userbot))
+                print(f"✅ Chatbot monitoring started for {userbot.me.first_name}")
+                
+                # Mark sebagai aktif
+                chatbot_active[userbot.me.id] = True
+                
             except Exception as e:
-                print(f"❌ Error starting polling for {userbot.me.first_name}: {e}")
+                print(f"❌ Error starting chatbot for {userbot.me.first_name}: {e}")
+                print(traceback.format_exc())
         
-        print("✅ Chatbot Task initialized successfully")
+        print(f"✅ Chatbot Task initialized successfully for {len(nlx._ubot)} userbot(s)")
+        
     except Exception as e:
         print(f"❌ Error in ChatbotTask: {e}")
         print(traceback.format_exc())
+
+# Fungsi untuk restart chatbot jika diperlukan  
+async def restart_chatbot():
+    """Restart chatbot handlers"""
+    try:
+        print("🔄 Restarting chatbot...")
+        
+        # Clear existing state
+        global chatbot_active, userbot_ids
+        chatbot_active.clear()
+        userbot_ids.clear()
+        
+        # Restart
+        await ChatbotTask()
+        print("🔄 Chatbot restarted successfully")
+        
+    except Exception as e:
+        print(f"❌ Error restarting chatbot: {e}")
+        print(traceback.format_exc())
+
+# Fungsi untuk cek status chatbot
+def get_chatbot_status():
+    """Get status chatbot untuk semua userbot"""
+    status = {}
+    for userbot in nlx._ubot:
+        user_id = userbot.me.id
+        active_chats = dB.get_list_from_var(user_id, "CHATBOT") or []
+        status[user_id] = {
+            "name": userbot.me.first_name,
+            "active": user_id in chatbot_active,
+            "chat_count": len(active_chats),
+            "chats": active_chats
+        }
+    return status
 
 # Fungsi manual untuk test chatbot
 async def test_chatbot_manual(client, chat_id, text):
@@ -345,7 +428,7 @@ async def test_chatbot_manual(client, chat_id, text):
         # Buat fake message object untuk testing
         class FakeUser:
             def __init__(self):
-                self.id = 12345
+                self.id = 12345  # Fake user ID for testing
                 self.first_name = "Test User"
         
         class FakeChat:
@@ -362,13 +445,61 @@ async def test_chatbot_manual(client, chat_id, text):
                 self.id = 1
             
             async def reply(self, text):
-                print(f"Bot would reply: {text}")
+                print(f"🧪 Test Response: {text}")
+                return True
         
         fake_msg = FakeMessage(text, chat_id)
-        result = await gen_text(client, fake_msg)
-        print(f"Generated response: {result}")
-        return result
         
+        # Test generate response
+        response = await gen_text(client, fake_msg)
+        
+        if response:
+            print(f"✅ Test successful - Generated: {response}")
+            return response
+        else:
+            print("❌ Test failed - No response generated")
+            return None
+            
     except Exception as e:
+        print(f"❌ Error in test: {e}")
+        print(traceback.format_exc())
+        return None
         print(f"Error in test: {e}")
         return None
+
+# Fungsi untuk auto-start chatbot saat bot startup
+async def auto_start_chatbot():
+    """Auto start chatbot saat bot startup"""
+    try:
+        await asyncio.sleep(5)  # Wait for all userbots to initialize
+        await ChatbotTask()
+        print("🚀 Auto-started chatbot monitoring")
+    except Exception as e:
+        print(f"❌ Error auto-starting chatbot: {e}")
+
+# Fungsi untuk monitor health chatbot
+async def chatbot_health_monitor():
+    """Monitor kesehatan chatbot dan restart jika diperlukan"""
+    while True:
+        try:
+            await asyncio.sleep(300)  # Check every 5 minutes
+            
+            # Check if any userbot needs restart
+            for userbot in nlx._ubot:
+                if userbot.me.id not in chatbot_active:
+                    print(f"⚠️ Chatbot not active for {userbot.me.first_name}, restarting...")
+                    chatbot_active[userbot.me.id] = True
+                    asyncio.create_task(chatbot_monitoring_loop(userbot))
+                    
+        except Exception as e:
+            print(f"❌ Error in health monitor: {e}")
+
+# Export functions for external use
+__all__ = [
+    'ChatbotTask',
+    'chatbot_cmd', 
+    'restart_chatbot',
+    'get_chatbot_status',
+    'auto_start_chatbot',
+    'chatbot_health_monitor'
+]

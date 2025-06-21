@@ -12,7 +12,10 @@ RANDOM_EMOJIS = [
     "😀", "😂", "😍", "😎", "😢", "😡", "👍", "👎",
     "🙏", "👏", "❤️", "🗿", "😭", "🔥"
 ]
+
+# Initialize global variables properly
 userbot_ids = set()
+chatbot_active = {}  # This was missing in your code!
 
 async def get_chat_history(client, chat_id, user_id):
     key = f"chat_history_{chat_id}_{user_id}"
@@ -59,121 +62,162 @@ async def gen_text(client, message):
 @ky.ubot("chatbot")
 async def chatbot_cmd(client, message, _):
     """Handle chatbot commands"""
-    cmd = message.command
-    if len(cmd) < 2:
-        return await message.reply(
-            f"<b>Usage: <code>{cmd[0]} on|off|status|role|test|debug</code></b>\n\n"
-            f"<b>Commands:</b>\n"
-            f"• <code>on</code> - Aktifkan chatbot\n"
-            f"• <code>off</code> - Matikan chatbot\n"
-            f"• <code>status</code> - Lihat status\n"
-            f"• <code>role</code> - Set/lihat role\n"
-            f"• <code>test [text]</code> - Test response\n"
-            f"• <code>debug</code> - Debug info"
-        )
+    try:
+        cmd = message.command
+        if len(cmd) < 2:
+            return await message.reply(
+                f"<b>Usage: <code>{cmd[0]} on|off|status|role|test|debug</code></b>\n\n"
+                f"<b>Commands:</b>\n"
+                f"• <code>on</code> - Aktifkan chatbot\n"
+                f"• <code>off</code> - Matikan chatbot\n"
+                f"• <code>status</code> - Lihat status\n"
+                f"• <code>role</code> - Set/lihat role\n"
+                f"• <code>test [text]</code> - Test response\n"
+                f"• <code>debug</code> - Debug info"
+            )
 
-    action = cmd[1].lower()
-    chat_id = message.chat.id
-    bot_var_key = "CHATBOT"
-
-    if action == "on":
-        current_chats = dB.get_list_from_var(client.me.id, bot_var_key) or []
-        if chat_id not in current_chats:
-            dB.add_to_var(client.me.id, bot_var_key, chat_id)
-            return await message.reply("<b>✅ Chatbot berhasil diaktifkan.</b>")
-        else:
-            return await message.reply("<b>⚠️ Chatbot sudah aktif di grup ini.</b>")
-
-    elif action == "off":
-        if len(cmd) >= 3 and cmd[2] == "all":
-            chats = dB.get_list_from_var(client.me.id, bot_var_key) or []
-            for cid in chats:
-                dB.remove_from_var(client.me.id, bot_var_key, cid)
-            return await message.reply("<b>🗑️ Semua chatbot group berhasil dihapus.</b>")
-
-        try:
-            target_chat_id = int(cmd[2]) if len(cmd) >= 3 else chat_id
-        except (ValueError, IndexError):
-            target_chat_id = chat_id
-
-        current_chats = dB.get_list_from_var(client.me.id, bot_var_key) or []
-        if target_chat_id not in current_chats:
-            return await message.reply(f"<b>⚠️ Chatbot tidak aktif di chat ID: <code>{target_chat_id}</code></b>")
-
-        dB.remove_from_var(client.me.id, bot_var_key, target_chat_id)
-        try:
-            chat_info = await client.get_chat(target_chat_id)
-            name = chat_info.title or "Unknown"
-        except:
-            name = f"Chat ID: {target_chat_id}"
+        action = cmd[1].lower()
+        chat_id = message.chat.id
+        bot_var_key = "CHATBOT"
         
-        return await message.reply(f"<b>❌ Chatbot dimatikan untuk: {name}</b>")
+        print(f"🔍 Processing chatbot command: {action} in chat {chat_id} by user {client.me.first_name}")
 
-    elif action == "status":
-        chats = dB.get_list_from_var(client.me.id, bot_var_key) or []
-        if not chats:
-            return await message.reply("<b>📝 Tidak ada grup yang mengaktifkan chatbot.</b>")
-        
-        # Get status lengkap
-        status_info = []
-        status_info.append("<b>📋 Status Chatbot:</b>\n")
-        status_info.append(f"<b>🤖 Userbot:</b> {client.me.first_name}")
-        status_info.append(f"<b>📊 Total Chat Aktif:</b> {len(chats)}")
-        status_info.append(f"<b>🔄 Monitoring:</b> {'✅ Active' if client.me.id in chatbot_active else '❌ Inactive'}")
-        status_info.append("")
-        status_info.append("<b>📝 Daftar Chat Aktif:</b>")
-        
-        for i, cid in enumerate(chats, 1):
+        if action == "on":
             try:
-                chat_info = await client.get_chat(cid)
-                name = chat_info.title or "Unknown"
-                status_info.append(f"<b>{i}. {name}</b>")
-                status_info.append(f"   └ ID: <code>{cid}</code>")
-            except:
-                status_info.append(f"<b>{i}. Unknown Chat</b>")
-                status_info.append(f"   └ ID: <code>{cid}</code> (⚠️ Error)")
-        
-        return await message.reply("\n".join(status_info))
+                current_chats = dB.get_list_from_var(client.me.id, bot_var_key) or []
+                print(f"📋 Current active chats: {current_chats}")
+                
+                if chat_id not in current_chats:
+                    dB.add_to_var(client.me.id, bot_var_key, chat_id)
+                    
+                    # Verify it was added
+                    updated_chats = dB.get_list_from_var(client.me.id, bot_var_key) or []
+                    print(f"📋 Updated active chats: {updated_chats}")
+                    
+                    # Mark chatbot as active for this userbot
+                    chatbot_active[client.me.id] = True
+                    
+                    return await message.reply("<b>✅ Chatbot berhasil diaktifkan.</b>")
+                else:
+                    return await message.reply("<b>⚠️ Chatbot sudah aktif di grup ini.</b>")
+            except Exception as e:
+                print(f"❌ Error in chatbot on: {e}")
+                return await message.reply(f"<b>❌ Error: {str(e)}</b>")
 
-    elif action == "role":
-        if not message.reply_to_message:
-            current_role = dB.get_var(client.me.id, "ROLE_CHATBOT")
-            if current_role:
-                return await message.reply(f"<b>🎭 Role saat ini:</b>\n<code>{current_role}</code>\n\n<b>Untuk mengubah, reply pesan yang berisi role baru.</b>")
-            else:
-                return await message.reply(f"<b>📝 Reply ke pesan yang berisi role chatbot untuk mengatur role.</b>")
-        
-        role = message.reply_to_message.text or message.reply_to_message.caption
-        if not role:
-            return await message.reply("<b>⚠️ Pesan yang di-reply tidak berisi teks.</b>")
-            
-        dB.set_var(client.me.id, "ROLE_CHATBOT", role)
-        return await message.reply(f"<b>✅ Role chatbot berhasil diatur:</b>\n<code>{role[:200]}...</code>" if len(role) > 200 else f"<b>✅ Role chatbot berhasil diatur:</b>\n<code>{role}</code>")
+        elif action == "off":
+            try:
+                if len(cmd) >= 3 and cmd[2] == "all":
+                    chats = dB.get_list_from_var(client.me.id, bot_var_key) or []
+                    for cid in chats:
+                        dB.remove_from_var(client.me.id, bot_var_key, cid)
+                    return await message.reply("<b>🗑️ Semua chatbot group berhasil dihapus.</b>")
 
-    elif action == "test":
-        # Test chatbot response
-        test_text = " ".join(cmd[2:]) if len(cmd) > 2 else "hello"
-        result = await test_chatbot_manual(client, message.chat.id, test_text)
-        if result:
-            return await message.reply(f"<b>🧪 Test Response:</b>\n{result}")
-        else:
-            return await message.reply("<b>❌ Test failed. Check API connection.</b>")
+                try:
+                    target_chat_id = int(cmd[2]) if len(cmd) >= 3 else chat_id
+                except (ValueError, IndexError):
+                    target_chat_id = chat_id
 
-    elif action == "debug":
-        # Debug info lengkap
-        active_chats = dB.get_list_from_var(client.me.id, "CHATBOT") or []
-        current_role = dB.get_var(client.me.id, "ROLE_CHATBOT")
-        
-        # Check monitoring status
-        monitoring_status = "✅ Active" if client.me.id in chatbot_active else "❌ Inactive"
-        
-        # Check API key
-        api_status = "✅ Valid" if botcax_api else "❌ Missing"
-        
-        # Get total userbots
-        total_ubot = len(nlx._ubot) if hasattr(nlx, '_ubot') else 0
-        
-        debug_info = f"""<b>🔍 Debug Info Chatbot:</b>
+                current_chats = dB.get_list_from_var(client.me.id, bot_var_key) or []
+                print(f"📋 Current chats before removal: {current_chats}")
+                
+                if target_chat_id not in current_chats:
+                    return await message.reply(f"<b>⚠️ Chatbot tidak aktif di chat ID: <code>{target_chat_id}</code></b>")
+
+                dB.remove_from_var(client.me.id, bot_var_key, target_chat_id)
+                
+                # Verify removal
+                updated_chats = dB.get_list_from_var(client.me.id, bot_var_key) or []
+                print(f"📋 Updated chats after removal: {updated_chats}")
+                
+                try:
+                    chat_info = await client.get_chat(target_chat_id)
+                    name = chat_info.title or "Unknown"
+                except:
+                    name = f"Chat ID: {target_chat_id}"
+                
+                return await message.reply(f"<b>❌ Chatbot dimatikan untuk: {name}</b>")
+            except Exception as e:
+                print(f"❌ Error in chatbot off: {e}")
+                return await message.reply(f"<b>❌ Error: {str(e)}</b>")
+
+        elif action == "status":
+            try:
+                chats = dB.get_list_from_var(client.me.id, bot_var_key) or []
+                if not chats:
+                    return await message.reply("<b>📝 Tidak ada grup yang mengaktifkan chatbot.</b>")
+                
+                # Get status lengkap
+                status_info = []
+                status_info.append("<b>📋 Status Chatbot:</b>\n")
+                status_info.append(f"<b>🤖 Userbot:</b> {client.me.first_name}")
+                status_info.append(f"<b>📊 Total Chat Aktif:</b> {len(chats)}")
+                status_info.append(f"<b>🔄 Monitoring:</b> {'✅ Active' if client.me.id in chatbot_active else '❌ Inactive'}")
+                status_info.append("")
+                status_info.append("<b>📝 Daftar Chat Aktif:</b>")
+                
+                for i, cid in enumerate(chats, 1):
+                    try:
+                        chat_info = await client.get_chat(cid)
+                        name = chat_info.title or "Unknown"
+                        status_info.append(f"<b>{i}. {name}</b>")
+                        status_info.append(f"   └ ID: <code>{cid}</code>")
+                    except:
+                        status_info.append(f"<b>{i}. Unknown Chat</b>")
+                        status_info.append(f"   └ ID: <code>{cid}</code> (⚠️ Error)")
+                
+                return await message.reply("\n".join(status_info))
+            except Exception as e:
+                print(f"❌ Error in status: {e}")
+                return await message.reply(f"<b>❌ Error: {str(e)}</b>")
+
+        elif action == "role":
+            try:
+                if not message.reply_to_message:
+                    current_role = dB.get_var(client.me.id, "ROLE_CHATBOT")
+                    if current_role:
+                        return await message.reply(f"<b>🎭 Role saat ini:</b>\n<code>{current_role}</code>\n\n<b>Untuk mengubah, reply pesan yang berisi role baru.</b>")
+                    else:
+                        return await message.reply(f"<b>📝 Reply ke pesan yang berisi role chatbot untuk mengatur role.</b>")
+                
+                role = message.reply_to_message.text or message.reply_to_message.caption
+                if not role:
+                    return await message.reply("<b>⚠️ Pesan yang di-reply tidak berisi teks.</b>")
+                    
+                dB.set_var(client.me.id, "ROLE_CHATBOT", role)
+                return await message.reply(f"<b>✅ Role chatbot berhasil diatur:</b>\n<code>{role[:200]}...</code>" if len(role) > 200 else f"<b>✅ Role chatbot berhasil diatur:</b>\n<code>{role}</code>")
+            except Exception as e:
+                print(f"❌ Error in role: {e}")
+                return await message.reply(f"<b>❌ Error: {str(e)}</b>")
+
+        elif action == "test":
+            try:
+                # Test chatbot response
+                test_text = " ".join(cmd[2:]) if len(cmd) > 2 else "hello"
+                result = await test_chatbot_manual(client, message.chat.id, test_text)
+                if result:
+                    return await message.reply(f"<b>🧪 Test Response:</b>\n{result}")
+                else:
+                    return await message.reply("<b>❌ Test failed. Check API connection.</b>")
+            except Exception as e:
+                print(f"❌ Error in test: {e}")
+                return await message.reply(f"<b>❌ Error: {str(e)}</b>")
+
+        elif action == "debug":
+            try:
+                # Debug info lengkap
+                active_chats = dB.get_list_from_var(client.me.id, "CHATBOT") or []
+                current_role = dB.get_var(client.me.id, "ROLE_CHATBOT")
+                
+                # Check monitoring status
+                monitoring_status = "✅ Active" if client.me.id in chatbot_active else "❌ Inactive"
+                
+                # Check API key
+                api_status = "✅ Valid" if botcax_api else "❌ Missing"
+                
+                # Get total userbots
+                total_ubot = len(nlx._ubot) if hasattr(nlx, '_ubot') else 0
+                
+                debug_info = f"""<b>🔍 Debug Info Chatbot:</b>
 
 <b>📊 Status Umum:</b>
 ├ <b>Userbot ID:</b> <code>{client.me.id}</code>
@@ -198,14 +242,20 @@ async def chatbot_cmd(client, message, _):
 ├ <code>.chatbot on</code> - Aktifkan di chat ini
 └ <code>.chatbot status</code> - Lihat status lengkap"""
 
-        return await message.reply(debug_info)
+                return await message.reply(debug_info)
+            except Exception as e:
+                print(f"❌ Error in debug: {e}")
+                return await message.reply(f"<b>❌ Error: {str(e)}</b>")
 
-    else:
-        return await message.reply(f"<b>❌ Aksi tidak valid: <code>{action}</code></b>\n<b>Gunakan: on, off, status, role, test, atau debug</b>")
+        else:
+            return await message.reply(f"<b>❌ Aksi tidak valid: <code>{action}</code></b>\n<b>Gunakan: on, off, status, role, test, atau debug</b>")
+            
+    except Exception as e:
+        print(f"❌ Critical error in chatbot_cmd: {e}")
+        print(traceback.format_exc())
+        return await message.reply(f"<b>❌ Critical Error: {str(e)}</b>")
 
-# Global variable untuk menyimpan handler
-message_handlers = {}
-
+# Rest of your code remains the same...
 async def chatbot_trigger(client, message):
     """Process message dengan chatbot"""
     try:
@@ -463,8 +513,6 @@ async def test_chatbot_manual(client, chat_id, text):
     except Exception as e:
         print(f"❌ Error in test: {e}")
         print(traceback.format_exc())
-        return None
-        print(f"Error in test: {e}")
         return None
 
 # Fungsi untuk auto-start chatbot saat bot startup

@@ -2,7 +2,7 @@ import random
 import traceback
 import asyncio
 
-from pyrogram import enums, errors, filters, handlers
+from pyrogram import enums, errors
 from config import bot_id, botcax_api, the_cegers
 from Userbot.helper.database import dB, state
 from Userbot.helper.tools import ky, fetch
@@ -13,6 +13,8 @@ RANDOM_EMOJIS = [
     "🙏", "👏", "❤️", "🗿", "😭", "🔥"
 ]
 userbot_ids = set()
+chatbot_tasks = {}  # Store running tasks for each userbot
+processed_messages = {}  # Track processed messages per userbot
 
 async def get_chat_history(client, chat_id, user_id):
     key = f"chat_history_{chat_id}_{user_id}"
@@ -30,7 +32,7 @@ async def gen_text(client, message):
 
     default_role = (
         "kamu adalah cewek bernama Moshi dengan kepribadian dry text dan sangat singkat dalam merespon. "
-        "balasan kamu harus super minimal maksimal 1-3 kata saja dan jangan pernah bilang kalau kamu itu bot, kamu adalah moshi pemilik gc ini. "
+        "balasan kamu harus super minimal maksimal 1-3 kata saja. "
         "kamu jutek tengil ngeselin tapi dengan balasan yang sangat pendek dan kering. "
         "jangan pake emoji jangan pake tanda baca sama sekali. "
         "pake huruf kecil semua dan balasan harus sesingkat mungkin. "
@@ -44,540 +46,250 @@ async def gen_text(client, message):
     messages = [{"role": "system", "content": role}] + history + [{"role": "user", "content": text}]
 
     payload = {"message": messages, "apikey": botcax_api}
-    
-    try:
-        res = await fetch.post("https://api.botcahx.eu.org/api/search/openai-custom", json=payload)
-        if res.status_code == 200:
-            result = res.json().get("result")
-            await add_to_chat_history(client.me.id, chat_id, user_id, "user", text)
-            await add_to_chat_history(client.me.id, chat_id, user_id, "assistant", result)
-            return result
-    except Exception as e:
-        print(f"Error in gen_text: {e}")
+    res = await fetch.post("https://api.botcahx.eu.org/api/search/openai-custom", json=payload)
+
+    if res.status_code == 200:
+        result = res.json().get("result")
+        await add_to_chat_history(client.me.id, chat_id, user_id, "user", text)
+        await add_to_chat_history(client.me.id, chat_id, user_id, "assistant", result)
+        return result
     return None
-
-# Fungsi helper untuk database operations yang lebih robust
-def safe_get_chatbot_list(user_id):
-    """Safely get chatbot list dengan error handling"""
-    try:
-        # Debug: print user_id dan tipe
-        print(f"Getting chatbot list for user_id: {user_id} (type: {type(user_id)})")
-        
-        # Ambil raw data dari database
-        raw_data = dB.get_var(user_id, "CHATBOT")
-        print(f"Raw data from database: {raw_data} (type: {type(raw_data)})")
-        
-        if not raw_data:
-            print("No raw data found, returning empty list")
-            return []
-        
-        # Handle berbagai format data
-        if isinstance(raw_data, str):
-            if raw_data.strip() == "":
-                return []
-            # Split dan convert ke int
-            chat_ids = []
-            for item in raw_data.split():
-                try:
-                    chat_id = int(item)
-                    chat_ids.append(chat_id)
-                except ValueError:
-                    print(f"Failed to convert '{item}' to int, skipping")
-                    continue
-            print(f"Converted chat_ids: {chat_ids}")
-            return chat_ids
-        elif isinstance(raw_data, list):
-            # Jika sudah list, pastikan semua item adalah int
-            chat_ids = []
-            for item in raw_data:
-                try:
-                    chat_id = int(item)
-                    chat_ids.append(chat_id)
-                except ValueError:
-                    print(f"Failed to convert list item '{item}' to int, skipping")
-                    continue
-            print(f"Converted list chat_ids: {chat_ids}")
-            return chat_ids
-        else:
-            print(f"Unexpected data type: {type(raw_data)}, returning empty list")
-            return []
-            
-    except Exception as e:
-        print(f"Error in safe_get_chatbot_list: {e}")
-        traceback.print_exc()
-        return []
-
-def safe_add_chatbot(user_id, chat_id):
-    """Safely add chatbot dengan error handling"""
-    try:
-        print(f"Adding chatbot for user_id: {user_id}, chat_id: {chat_id}")
-        
-        # Get current list
-        current_list = safe_get_chatbot_list(user_id)
-        print(f"Current list: {current_list}")
-        
-        # Check jika sudah ada
-        if chat_id in current_list:
-            print(f"Chat ID {chat_id} already in list")
-            return False
-        
-        # Add to list
-        current_list.append(chat_id)
-        print(f"New list: {current_list}")
-        
-        # Save as string (sesuai dengan format database)
-        data_string = " ".join(map(str, current_list))
-        print(f"Saving as string: '{data_string}'")
-        
-        dB.set_var(user_id, "CHATBOT", data_string)
-        
-        # Verify
-        verification = safe_get_chatbot_list(user_id)
-        print(f"Verification list: {verification}")
-        
-        return chat_id in verification
-        
-    except Exception as e:
-        print(f"Error in safe_add_chatbot: {e}")
-        traceback.print_exc()
-        return False
-
-def safe_remove_chatbot(user_id, chat_id):
-    """Safely remove chatbot dengan error handling"""
-    try:
-        print(f"Removing chatbot for user_id: {user_id}, chat_id: {chat_id}")
-        
-        # Get current list
-        current_list = safe_get_chatbot_list(user_id)
-        print(f"Current list: {current_list}")
-        
-        # Check jika ada
-        if chat_id not in current_list:
-            print(f"Chat ID {chat_id} not in list")
-            return False
-        
-        # Remove from list
-        current_list.remove(chat_id)
-        print(f"New list after removal: {current_list}")
-        
-        # Save as string
-        if current_list:
-            data_string = " ".join(map(str, current_list))
-        else:
-            data_string = ""
-        print(f"Saving as string: '{data_string}'")
-        
-        dB.set_var(user_id, "CHATBOT", data_string)
-        
-        # Verify
-        verification = safe_get_chatbot_list(user_id)
-        print(f"Verification list: {verification}")
-        
-        return chat_id not in verification
-        
-    except Exception as e:
-        print(f"Error in safe_remove_chatbot: {e}")
-        traceback.print_exc()
-        return False
 
 @ky.ubot("chatbot")
 async def chatbot_cmd(client, message, _):
-    """Handle chatbot commands dengan debugging"""
-    try:
-        print(f"\n=== CHATBOT COMMAND START ===")
-        print(f"User: {client.me.first_name} ({client.me.id})")
-        print(f"Chat: {message.chat.title} ({message.chat.id})")
-        print(f"Command: {message.text}")
+    cmd = message.command
+    if len(cmd) < 2:
+        return await message.reply(
+            f"<b>Usage: `{cmd[0]} on|off|status|role|stop|start`</b>"
+        )
+
+    action = cmd[1]
+    chat_id = message.chat.id
+    bot_var_key = "CHATBOT"
+
+    if action == "on":
+        dB.add_to_var(client.me.id, bot_var_key, chat_id)
+        # Auto start task if not running
+        if client.me.id not in chatbot_tasks:
+            task = asyncio.create_task(chatbot_task_loop(client))
+            chatbot_tasks[client.me.id] = task
+            processed_messages[client.me.id] = set()
+        return await message.reply("<b>Chatbot turned on.</b>")
+
+    elif action == "off":
+        if len(cmd) >= 3 and cmd[2] == "all":
+            for cid in dB.get_list_from_var(client.me.id, bot_var_key):
+                dB.remove_from_var(client.me.id, bot_var_key, cid)
+            # Stop task if no chats enabled
+            if client.me.id in chatbot_tasks:
+                chatbot_tasks[client.me.id].cancel()
+                del chatbot_tasks[client.me.id]
+                if client.me.id in processed_messages:
+                    del processed_messages[client.me.id]
+            return await message.reply("<b>All chatbot group entries removed and task stopped.</b>")
+
+        try:
+            target_chat_id = int(cmd[2]) if len(cmd) >= 3 else chat_id
+        except ValueError:
+            return await message.reply(f"<b>Invalid chat ID: `{cmd[2]}`</b>")
+
+        if target_chat_id not in dB.get_list_from_var(client.me.id, bot_var_key):
+            return await message.reply(f"<b>Chat ID `{target_chat_id}` not found.</b>")
+
+        dB.remove_from_var(client.me.id, bot_var_key, target_chat_id)
+        name = (await client.get_chat(target_chat_id)).title
         
-        cmd = message.command
-        if len(cmd) < 2:
-            return await message.reply(
-                f"<b>Usage: <code>{cmd[0]} on|off|status|role|test|debug</code></b>\n\n"
-                f"<b>Commands:</b>\n"
-                f"• <code>on</code> - Aktifkan chatbot\n"
-                f"• <code>off [chat_id|all]</code> - Matikan chatbot\n"
-                f"• <code>status</code> - Lihat status\n"
-                f"• <code>role</code> - Set/lihat role\n"
-                f"• <code>test [text]</code> - Test response\n"
-                f"• <code>debug</code> - Debug info"
-            )
+        # Check if no more chats enabled, stop task
+        remaining_chats = dB.get_list_from_var(client.me.id, bot_var_key)
+        if not remaining_chats and client.me.id in chatbot_tasks:
+            chatbot_tasks[client.me.id].cancel()
+            del chatbot_tasks[client.me.id]
+            if client.me.id in processed_messages:
+                del processed_messages[client.me.id]
+            return await message.reply(f"<b>Chatbot turned off for: {name} and task stopped (no active chats).</b>")
+        
+        return await message.reply(f"<b>Chatbot turned off for: {name}</b>")
 
-        action = cmd[1].lower()
-        chat_id = message.chat.id
-        user_id = client.me.id
-
-        print(f"Action: {action}")
-        print(f"Chat ID: {chat_id} (type: {type(chat_id)})")
-        print(f"User ID: {user_id} (type: {type(user_id)})")
-
-        if action == "on":
-            print("Processing 'on' command...")
-            
-            # Test database connection
-            try:
-                test_var = dB.get_var(user_id, "TEST_CONNECTION")
-                dB.set_var(user_id, "TEST_CONNECTION", "OK")
-                print("Database connection test: OK")
-            except Exception as e:
-                print(f"Database connection test failed: {e}")
-                return await message.reply(f"<b>❌ Database error: {e}</b>")
-            
-            # Check current status
-            current_chats = safe_get_chatbot_list(user_id)
-            print(f"Current active chats: {current_chats}")
-            
-            if chat_id in current_chats:
-                return await message.reply("<b>⚠️ Chatbot sudah aktif di grup ini.</b>")
-            
-            # Add chatbot
-            success = safe_add_chatbot(user_id, chat_id)
-            
-            if success:
-                return await message.reply("<b>✅ Chatbot berhasil diaktifkan!</b>")
-            else:
-                return await message.reply("<b>❌ Gagal mengaktifkan chatbot. Coba lagi.</b>")
-
-        elif action == "off":
-            print("Processing 'off' command...")
-            
-            if len(cmd) >= 3 and cmd[2].lower() == "all":
-                print("Removing all chats...")
-                try:
-                    dB.set_var(user_id, "CHATBOT", "")
-                    return await message.reply("<b>🗑️ Semua chatbot berhasil dimatikan.</b>")
-                except Exception as e:
-                    print(f"Error removing all: {e}")
-                    return await message.reply(f"<b>❌ Error: {e}</b>")
-
-            # Determine target chat
-            try:
-                target_chat_id = int(cmd[2]) if len(cmd) >= 3 else chat_id
-            except (ValueError, IndexError):
-                target_chat_id = chat_id
-
-            print(f"Target chat ID: {target_chat_id}")
-
-            # Check current status
-            current_chats = safe_get_chatbot_list(user_id)
-            print(f"Current active chats: {current_chats}")
-            
-            if target_chat_id not in current_chats:
-                return await message.reply(f"<b>⚠️ Chatbot tidak aktif di chat ID: <code>{target_chat_id}</code></b>")
-
-            # Remove chatbot
-            success = safe_remove_chatbot(user_id, target_chat_id)
-            
-            if success:
-                try:
-                    chat_info = await client.get_chat(target_chat_id)
-                    name = chat_info.title or "Unknown"
-                except:
-                    name = f"Chat ID: {target_chat_id}"
-                
-                return await message.reply(f"<b>❌ Chatbot dimatikan untuk: {name}</b>")
-            else:
-                return await message.reply("<b>❌ Gagal mematikan chatbot. Coba lagi.</b>")
-
-        elif action == "status":
-            print("Processing 'status' command...")
-            
-            chats = safe_get_chatbot_list(user_id)
-            print(f"Active chats for status: {chats}")
-            
-            if not chats:
-                return await message.reply("<b>📝 Tidak ada grup yang mengaktifkan chatbot.</b>")
-            
-            msg_lines = [f"<b>📋 Status Chatbot ({len(chats)} aktif):</b>\n"]
-            for i, cid in enumerate(chats, 1):
-                try:
-                    chat_info = await client.get_chat(cid)
-                    name = chat_info.title or "Unknown"
-                    msg_lines.append(f"<b>{i}. {name}</b> | <code>{cid}</code>")
-                except Exception as e:
-                    print(f"Error getting chat info for {cid}: {e}")
-                    msg_lines.append(f"<b>{i}. Unknown/Error</b> | <code>{cid}</code>")
-            
-            return await message.reply("\n".join(msg_lines))
-
-        elif action == "role":
-            print("Processing 'role' command...")
-            
-            if not message.reply_to_message:
-                current_role = dB.get_var(user_id, "ROLE_CHATBOT")
-                if current_role:
-                    return await message.reply(f"<b>🎭 Role saat ini:</b>\n<code>{current_role}</code>\n\n<b>Untuk mengubah, reply pesan yang berisi role baru.</b>")
-                else:
-                    return await message.reply(f"<b>📝 Reply ke pesan yang berisi role chatbot untuk mengatur role.</b>")
-            
-            role = message.reply_to_message.text or message.reply_to_message.caption
-            if not role:
-                return await message.reply("<b>⚠️ Pesan yang di-reply tidak berisi teks.</b>")
-                
-            try:
-                dB.set_var(user_id, "ROLE_CHATBOT", role)
-                return await message.reply(f"<b>✅ Role chatbot berhasil diatur:</b>\n<code>{role[:200]}...</code>" if len(role) > 200 else f"<b>✅ Role chatbot berhasil diatur:</b>\n<code>{role}</code>")
-            except Exception as e:
-                print(f"Error setting role: {e}")
-                return await message.reply(f"<b>❌ Error setting role: {e}</b>")
-
-        elif action == "test":
-            print("Processing 'test' command...")
-            
-            test_text = " ".join(cmd[2:]) if len(cmd) > 2 else "hello test"
-            result = await test_chatbot_manual(client, message.chat.id, test_text)
-            if result:
-                return await message.reply(f"<b>🧪 Test Response:</b>\n{result}")
-            else:
-                return await message.reply("<b>❌ Test failed. Check API connection.</b>")
-
-        elif action == "debug":
-            print("Processing 'debug' command...")
-            
-            try:
-                active_chats = safe_get_chatbot_list(user_id)
-                current_role = dB.get_var(user_id, "ROLE_CHATBOT")
-                
-                # Test database operations
-                test_result = "❌"
-                try:
-                    dB.set_var(user_id, "TEST_DEBUG", "test_value")
-                    retrieved = dB.get_var(user_id, "TEST_DEBUG")
-                    if retrieved == "test_value":
-                        test_result = "✅"
-                except:
-                    pass
-                
-                debug_info = f"""<b>🔍 Debug Info:</b>
-
-<b>Userbot ID:</b> <code>{user_id}</code>
-<b>Current Chat ID:</b> <code>{message.chat.id}</code>
-<b>Active Chats:</b> {len(active_chats)} - {active_chats}
-<b>Chat Active:</b> {'✅' if message.chat.id in active_chats else '❌'}
-<b>Role Set:</b> {'✅' if current_role else '❌'}
-<b>API Key:</b> {'✅' if botcax_api else '❌'}
-<b>Database Test:</b> {test_result}
-<b>Userbot IDs:</b> {len(userbot_ids)}
-
-<b>Raw Database Query:</b>
-<code>{dB.get_var(user_id, "CHATBOT")}</code>
-"""
-                return await message.reply(debug_info)
-            except Exception as e:
-                return await message.reply(f"<b>❌ Debug error: {e}</b>")
-
+    elif action == "stop":
+        # Force stop the chatbot task
+        if client.me.id in chatbot_tasks:
+            chatbot_tasks[client.me.id].cancel()
+            del chatbot_tasks[client.me.id]
+            if client.me.id in processed_messages:
+                del processed_messages[client.me.id]
+            return await message.reply("<b>Chatbot task force stopped.</b>")
         else:
-            return await message.reply(f"<b>❌ Aksi tidak valid: <code>{action}</code></b>")
+            return await message.reply("<b>No chatbot task running.</b>")
 
-    except Exception as e:
-        print(f"❌ MAJOR ERROR in chatbot command: {e}")
-        traceback.print_exc()
-        return await message.reply(f"<b>❌ Error besar: {e}</b>\n<b>Check console untuk detail.</b>")
-    finally:
-        print(f"=== CHATBOT COMMAND END ===\n")
+    elif action == "start":
+        # Manually start the chatbot task
+        if client.me.id in chatbot_tasks:
+            return await message.reply("<b>Chatbot task already running.</b>")
+        
+        chats = dB.get_list_from_var(client.me.id, bot_var_key)
+        if not chats:
+            return await message.reply("<b>No groups have chatbot enabled. Use 'chatbot on' first.</b>")
+            
+        task = asyncio.create_task(chatbot_task_loop(client))
+        chatbot_tasks[client.me.id] = task
+        processed_messages[client.me.id] = set()
+        return await message.reply("<b>Chatbot task started.</b>")
 
-# Global variable untuk menyimpan handler
-message_handlers = {}
+    elif action == "status":
+        chats = dB.get_list_from_var(client.me.id, bot_var_key)
+        task_status = "🟢 Running" if client.me.id in chatbot_tasks else "🔴 Stopped"
+        
+        if not chats:
+            return await message.reply(f"<b>No groups have chatbot enabled.\nTask Status: {task_status}</b>")
+        
+        msg = f"<b>Task Status: {task_status}</b>\n"
+        msg += f"<b>Active Chats: {len(chats)}</b>\n\n"
+        msg += "\n".join([
+            f"<b>{i+1}. {(await client.get_chat(cid)).title} | `{cid}`</b>"
+            for i, cid in enumerate(chats)
+        ])
+        return await message.reply(msg)
+
+    elif action == "role":
+        if not message.reply_to_message:
+            return await message.reply(f"<b>Reply to a message to set chatbot role.</b>")
+        role = message.reply_to_message.text or message.reply_to_message.caption
+        dB.set_var(client.me.id, "ROLE_CHATBOT", role)
+        return await message.reply(f"<b>Chatbot role set to:</b> `{role}`")
+
+    else:
+        return await message.reply(f"<b>Invalid action: `{action}`</b>")
 
 async def chatbot_trigger(client, message):
-    """Process message dengan chatbot"""
+    if message.chat.id not in dB.get_list_from_var(client.me.id, "CHATBOT"):
+        return
+    if message.from_user.id in userbot_ids or message.from_user.id in the_cegers:
+        return
+    
+    # Check if message was already processed
+    user_id = client.me.id
+    msg_id = f"{message.chat.id}_{message.id}"
+    
+    if user_id in processed_messages and msg_id in processed_messages[user_id]:
+        return
+        
+    # Add to processed messages
+    if user_id not in processed_messages:
+        processed_messages[user_id] = set()
+    processed_messages[user_id].add(msg_id)
+    
+    # Limit processed messages size
+    if len(processed_messages[user_id]) > 5000:
+        # Keep only the last 2500 messages
+        processed_list = list(processed_messages[user_id])
+        processed_messages[user_id] = set(processed_list[-2500:])
+    
     try:
-        # Show typing indicator
+        await client.send_chat_action(
+            chat_id=message.chat.id, action=enums.ChatAction.TYPING
+        )
+    except errors.ChatWriteForbidden:
+        pass
+    
+    data = await gen_text(client, message)
+    emoji = random.choice(RANDOM_EMOJIS)
+    
+    if data:
         try:
-            await client.send_chat_action(
-                chat_id=message.chat.id, 
-                action=enums.ChatAction.TYPING
+            await client.send_reaction(
+                chat_id=message.chat.id, message_id=message.id, emoji=emoji
             )
-        except (errors.ChatWriteForbidden, errors.PeerFlood):
+        except (errors.ReactionInvalid, errors.FloodWait):
             pass
-        
-        # Generate response
-        data = await gen_text(client, message)
-        
-        if data:
-            # Add random reaction
-            emoji = random.choice(RANDOM_EMOJIS)
-            try:
-                await client.send_reaction(
-                    chat_id=message.chat.id, 
-                    message_id=message.id, 
-                    emoji=emoji
-                )
-            except (errors.ReactionInvalid, errors.FloodWait, Exception):
-                pass
-            
-            # Send reply dengan delay untuk natural response
-            await asyncio.sleep(random.uniform(1, 3))
-            await message.reply(data)
-        
-        # Cancel typing
-        try:
-            await client.send_chat_action(
-                chat_id=message.chat.id, 
-                action=enums.ChatAction.CANCEL
-            )
-        except (errors.ChatWriteForbidden, Exception):
-            pass
-            
-    except Exception as e:
-        print(f"Error in chatbot_trigger: {e}")
-
-async def handle_group_message(client, message):
-    """Handle incoming group messages"""
+        await message.reply(data)
+    
     try:
-        # Skip jika tidak ada teks
-        if not (message.text or message.caption):
-            return
-            
-        # Skip jika dari userbot atau user tertentu
-        if (message.from_user.id in userbot_ids or 
-            message.from_user.id in the_cegers or
-            message.from_user.id == client.me.id):
-            return
-        
-        # Skip jika chatbot tidak aktif di grup ini
-        active_chats = safe_get_chatbot_list(client.me.id)
-        if message.chat.id not in active_chats:
-            return
-        
-        # Skip jika pesan adalah command
-        text = message.text or message.caption
-        if text.startswith(('.', '/', '!', '-')):
-            return
-            
-        print(f"🤖 Processing message from {message.from_user.first_name} in {message.chat.title}")
-        await chatbot_trigger(client, message)
-        
-    except Exception as e:
-        print(f"❌ Error in message handler: {e}")
-        print(traceback.format_exc())
+        await client.send_chat_action(
+            chat_id=message.chat.id, action=enums.ChatAction.CANCEL
+        )
+    except errors.ChatWriteForbidden:
+        pass
 
-def setup_chatbot_handlers():
-    """Setup message handlers untuk semua userbot"""
-    for userbot in nlx._ubot:
-        try:
-            # Add userbot ID ke set
-            userbot_ids.add(userbot.me.id)
-            
-            # Register handler jika belum ada
-            if userbot.me.id not in message_handlers:
-                handler = userbot.add_handler(
-                    handlers.MessageHandler(
-                        handle_group_message,
-                        filters.group & ~filters.bot & ~filters.via_bot
-                    )
-                )
-                message_handlers[userbot.me.id] = handler
-                print(f"✅ Handler registered for {userbot.me.first_name}")
-            
-        except Exception as e:
-            print(f"❌ Error setting up handler for {userbot.me.first_name}: {e}")
-            print(traceback.format_exc())
-
-# Alternative: Polling method (lebih simple dan reliable)
-async def chatbot_polling_loop(client):
-    """Polling loop untuk check pesan baru"""
-    last_message_ids = {}
+async def chatbot_task_loop(client):
+    user_id = client.me.id
+    last_message_ids = {}  # Track last processed message ID per chat
     
     while True:
         try:
-            active_chats = safe_get_chatbot_list(client.me.id)
+            chats = dB.get_list_from_var(user_id, "CHATBOT") or []
             
-            for chat_id in active_chats:
+            if not chats:
+                await asyncio.sleep(10)
+                continue
+            
+            for chat_id in chats:
                 try:
-                    # Get latest message
-                    async for message in client.get_chat_history(chat_id, limit=1):
-                        # Skip jika pesan sudah diproses
-                        if chat_id in last_message_ids and message.id <= last_message_ids[chat_id]:
-                            break
-                            
-                        # Skip jika tidak ada teks
-                        if not (message.text or message.caption):
-                            last_message_ids[chat_id] = message.id
-                            break
-                            
-                        # Skip jika dari userbot atau user tertentu
-                        if (message.from_user.id in userbot_ids or 
-                            message.from_user.id in the_cegers or
-                            message.from_user.id == client.me.id):
-                            last_message_ids[chat_id] = message.id
-                            break
-                        
-                        # Skip jika pesan adalah command
-                        text = message.text or message.caption
-                        if text.startswith(('.', '/', '!', '-')):
-                            last_message_ids[chat_id] = message.id
-                            break
-                        
-                        print(f"🤖 Processing message from {message.from_user.first_name} in chat {chat_id}")
-                        await chatbot_trigger(client, message)
-                        last_message_ids[chat_id] = message.id
-                        break
-                        
-                except Exception as e:
-                    print(f"Error processing chat {chat_id}: {e}")
+                    # Get recent messages
+                    messages_to_process = []
+                    async for msg in client.get_chat_history(chat_id, limit=3):
+                        # Skip if this is an old message we've seen before
+                        if chat_id in last_message_ids:
+                            if msg.id <= last_message_ids[chat_id]:
+                                break
+                        messages_to_process.append(msg)
                     
-                await asyncio.sleep(0.5)  # Small delay between chats
-                
-        except Exception as e:
-            print(f"Error in polling loop for {client.me.first_name}: {e}")
+                    # Process new messages (reverse order - oldest first)
+                    for msg in reversed(messages_to_process):
+                        # Skip very old messages (older than 10 minutes)
+                        if msg.date and (asyncio.get_event_loop().time() - msg.date.timestamp()) > 600:
+                            continue
+                            
+                        await chatbot_trigger(client, msg)
+                        last_message_ids[chat_id] = max(last_message_ids.get(chat_id, 0), msg.id)
+                        await asyncio.sleep(3)  # Delay between message processing
+                        
+                except Exception as chat_error:
+                    print(f"Error processing chat {chat_id} for {client.me.first_name}: {chat_error}")
+                    continue
+                    
+            await asyncio.sleep(5)  # Main loop delay
             
-        await asyncio.sleep(2)  # Main loop delay
+        except asyncio.CancelledError:
+            print(f"Chatbot task cancelled for {client.me.first_name}")
+            break
+        except errors.FloodWait as e:
+            print(f"FloodWait for {client.me.first_name}: {e.value} seconds")
+            await asyncio.sleep(e.value)
+        except Exception as e:
+            print(f"Error in Chatbot task for {client.me.first_name}: {e}\n{traceback.format_exc()}")
+            await asyncio.sleep(10)
 
 async def ChatbotTask():
-    """Initialize chatbot untuk semua userbot"""
-    try:
-        # Method 1: Try event handlers first
-        setup_chatbot_handlers()
-        
-        # Method 2: Fallback to polling (more reliable)
-        for userbot in nlx._ubot:
-            try:
-                userbot_ids.add(userbot.me.id)
-                asyncio.create_task(chatbot_polling_loop(userbot))
-                print(f"✅ Polling started for {userbot.me.first_name}")
-            except Exception as e:
-                print(f"❌ Error starting polling for {userbot.me.first_name}: {e}")
-        
-        print("✅ Chatbot Task initialized successfully")
-    except Exception as e:
-        print(f"❌ Error in ChatbotTask: {e}")
-        print(traceback.format_exc())
-
-# Fungsi manual untuk test chatbot
-async def test_chatbot_manual(client, chat_id, text):
-    """Fungsi untuk test chatbot secara manual"""
-    try:
-        # Buat fake message object untuk testing
-        class FakeUser:
-            def __init__(self):
-                self.id = 12345
-                self.first_name = "Test User"
-        
-        class FakeChat:
-            def __init__(self, chat_id):
-                self.id = chat_id
-                self.title = "Test Chat"
-        
-        class FakeMessage:
-            def __init__(self, text, chat_id):
-                self.text = text
-                self.caption = None
-                self.from_user = FakeUser()
-                self.chat = FakeChat(chat_id)
-                self.id = 1
+    for userbot in nlx._ubot:
+        try:
+            userbot_ids.add(userbot.me.id)
             
-            async def reply(self, text):
-                print(f"Bot would reply: {text}")
-        
-        fake_msg = FakeMessage(text, chat_id)
-        result = await gen_text(client, fake_msg)
-        print(f"Generated response: {result}")
-        return result
-        
-    except Exception as e:
-        print(f"Error in test: {e}")
-        return None
+            # Check if chatbot is enabled for any chats
+            chats = dB.get_list_from_var(userbot.me.id, "CHATBOT") or []
+            if chats:
+                # Cancel existing task if running
+                if userbot.me.id in chatbot_tasks:
+                    chatbot_tasks[userbot.me.id].cancel()
+                
+                # Create new task
+                task = asyncio.create_task(chatbot_task_loop(userbot))
+                chatbot_tasks[userbot.me.id] = task
+                processed_messages[userbot.me.id] = set()
+                print(f"Chatbot task started for {userbot.me.first_name}")
+            
+        except Exception as e:
+            print(f"Error starting Chatbot for {userbot.me.first_name}: {e}\n{traceback.format_exc()}")
 
-# Alias untuk compatibility dengan import yang berbeda
-chatbotTask = ChatbotTask  # lowercase alias
-chatbot_task = ChatbotTask  # snake_case alias
+async def stop_all_chatbot_tasks():
+    """Function to stop all chatbot tasks"""
+    for user_id, task in list(chatbot_tasks.items()):
+        task.cancel()
+        del chatbot_tasks[user_id]
+        if user_id in processed_messages:
+            del processed_messages[user_id]
+    print("All chatbot tasks stopped")
+
+# Add this function to be called on shutdown
+async def cleanup_chatbot():
+    """Cleanup function to be called when shutting down"""
+    await stop_all_chatbot_tasks()
